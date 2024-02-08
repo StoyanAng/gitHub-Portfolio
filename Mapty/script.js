@@ -1,14 +1,13 @@
 // TEST OpenSourseMapty
-import RunningWorkout from "./modules/RunningWorkout.js";
-import CyclingWorkout from "./modules/CyclingWorkout.js";
+import { RunningWorkout, CyclingWorkout } from "./modules/ClassesWorkout.js";
+import addRuningWorkout from "./modules/RunningWorkout.js";
+import addCyclingWorkout from "./modules/CyclingWorkout.js";
 
-// Get current day
-const months = ['January', 'February', 'March', 'April',
-    'May', 'June', 'July', 'August', 'September',
-    'October', 'November', 'December'];
-
-var date = new Date();
-date = months[date.getMonth()] + ` ${date.getDay()}`
+// Input elements
+var markers = {};                       
+const cadanceDiv = document.querySelector(".cadence__block");
+const elevationDiv = document.querySelector(".elevation__block");
+const select = document.querySelector(`select`);
 
 // Global variables
 let mapEvent, mapTarget;
@@ -23,6 +22,9 @@ const getGeolocation = function () {
 
 document.addEventListener(`DOMContentLoaded`, async onLoad => {
     try {
+        //localStorage.clear();
+
+        // Render Leaflet map 
         var position = await getGeolocation();
         const { latitude: lat, longitude: lon } = position.coords;
 
@@ -32,88 +34,97 @@ document.addEventListener(`DOMContentLoaded`, async onLoad => {
             attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         }).addTo(map);
 
-        //Load saved workouts
-        loadLocalWorkouts();
-
         mapTarget = map;
-        map.on(`click`, renderForm);
+
+        //Load saved workouts
+        renderWorkouts();
+        
+        // Select OnChange event
+        select.addEventListener("change", function () {
+            cadanceDiv.classList.toggle("form__row--hidden");
+            elevationDiv.classList.toggle("form__row--hidden");
+        });
+
+        map.on(`click`, function (e) {
+            // Get event
+            mapEvent = e;
+
+            // Render the form
+            const form = document.querySelector(`form`);
+            form.classList.remove(`hidden`);
+        });
     } catch (err) {
         console.error(err);
         alert(`Failed to ${err.massage}`)
-    } 
+    }
 });
 
-function renderForm(e) {
-    // Add change event to select
-    const inputCadance = document.querySelector(".change__row");
-    const inputElevation = document.querySelectorAll(".change__row")[1];
-
-    document.querySelector(`select`).addEventListener(`change`, function () {
-        inputCadance.classList.toggle("form__row--hidden");
-        inputElevation.classList.toggle("form__row--hidden");
-    });
-
-
-    // Get event
-    mapEvent = e;
-
-    // Render the form
-    const form = document.querySelector(`form`);
-    form.classList.remove(`hidden`)
-
-    // Add submit event to form
-    form.addEventListener(`submit`, sumbitWorkout);
-}
-
-function setMarker(date) {
-    const position = mapEvent.latlng;
-    var marker = L.marker([position.lat, position.lng])
-        .addTo(mapTarget)
-        .bindPopup(`<b>Running</b><br>${date}.`)
-        .openPopup()
-        .on(`click`, clickZoom);
-}
-
-function sumbitWorkout(e) {
+document.querySelector(`form`).addEventListener(`submit`, function (e) {
     e.preventDefault();
     e.target.classList.add(`hidden`);
+
     const workoutData = document.querySelectorAll(`input`);
     let option = document.querySelector(`select`);
+    const id = Math.floor(Math.random() * 100);
+    let workout;
 
     //Add workout 
     if (option.value == "running") {
-        RunningWorkout(workoutData, date);
+        workout = new RunningWorkout(mapEvent.latlng, workoutData[0].value, workoutData[1].value, workoutData[2].value, id);
+        addRuningWorkout(workout);
     }
     else {
-        CyclingWorkout(workoutData, date);
+        workout = new CyclingWorkout(mapEvent.latlng, workoutData[0].value, workoutData[1].value, workoutData[3].value, id);
+        addCyclingWorkout(workout);
     }
 
-    // SetworkoutMarker
-    setMarker(date);
+    // Add workout to localStorage
+    const marker = workout.setMarker(mapTarget);
+    markers[workout.id] = marker;
+    localStorage.setItem(id, JSON.stringify(workout));
 
-    // Clear form 
+    document.getElementById(`${workout.id}-btn`).addEventListener(`click`, deleteWorkout);
+
+    // Clear input of form
     for (let input of workoutData) {
         input.value = ``;
     }
-}
+});
 
-function clickZoom(e) {
-    mapTarget.setView(e.target.getLatLng(), 16);
-}
+function renderWorkouts() {
+    const locStg = localStorage;
+    console.log(locStg);
 
-function loadLocalWorkouts(){    
-    const workouts = localStorage;
-    console.log(workouts);
+    for (let i = 0; i < locStg.length; i++) {
+        var workout = JSON.parse(locStg.getItem([locStg.key(i)]));
 
-    for(let i = 0; i < workouts.length; i++){
-        const workout = workouts[workouts.key(i)];
-        const id = workouts.key(i);
-        document.querySelector(`ul`).innerHTML += workout;
-        document.getElementById(`${id}`).addEventListener(`click`, deleteWorkout);
+        if (workout.type == `running`) {
+            workout = Object.assign(new RunningWorkout(), workout);
+            addRuningWorkout(workout);
+        }
+        else {
+            workout = Object.assign(new CyclingWorkout(), workout);
+            addCyclingWorkout(workout);
+        }
+
+        const marker = workout.setMarker(mapTarget);
+        markers[workout.id] = marker;
+        document.getElementById(`${workout.id}-btn`).addEventListener(`click`, deleteWorkout);
     }
-
 }
 
-function deleteWorkout(e){
-    console.log(e.target);
+function deleteWorkout(e) {
+    const li = e.target.closest(`li`);
+    const marker = markers[li.id];
+
+
+    // First remove from local storage
+    localStorage.removeItem(li.id);
+
+    // Remove marker from the map and from markers object
+    mapTarget.removeLayer(marker);
+    delete markers[li.id];
+
+    // Finally remove it from ul element
+    document.querySelector(`ul`).removeChild(li);
 }
